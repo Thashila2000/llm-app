@@ -18,6 +18,7 @@ import {
   FiMessageSquare,
   FiCpu,
   FiCopy,
+  FiMenu,
 } from 'react-icons/fi';
 import { askGemini } from './actions';
 
@@ -43,7 +44,6 @@ interface ChatSession {
   createdAt: string;
 }
 
-// Small pulsing dot used as the "live" signal marker across the console.
 function SignalDot({ className = '' }: { className?: string }) {
   return (
     <span className={`relative inline-flex h-2 w-2 ${className}`}>
@@ -53,11 +53,9 @@ function SignalDot({ className = '' }: { className?: string }) {
   );
 }
 
-// Renders model output as proper markdown (headings, lists, code, tables, links)
-// instead of raw text, styled to match the console's amber/graphite theme.
 function MarkdownMessage({ text }: { text: string }) {
   return (
-    <div className="prose-console text-[13.5px] leading-relaxed text-[#D7DBE3]">
+    <div className="prose-console text-[13.5px] leading-relaxed text-[#D7DBE3] overflow-x-auto">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -118,11 +116,9 @@ function MarkdownMessage({ text }: { text: string }) {
 }
 
 export default function Home() {
-  // --- Chat Session States ---
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  // --- Input & Upload UI States ---
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success'>('idle');
@@ -130,10 +126,11 @@ export default function Home() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 1. Core Lifecycle hydration: Load sessions from localStorage on boot
   useEffect(() => {
     const savedSessions = localStorage.getItem('gemini_workspace_chats');
     if (savedSessions) {
@@ -153,13 +150,12 @@ export default function Home() {
     }
   }, []);
 
-  // 2. Local Backup Sync: Auto-serialize state tree to disk safely with quota exception handling
   const saveToDisk = (updatedSessions: ChatSession[]) => {
     const sanitizedSessions = updatedSessions.map(session => ({
       ...session,
       messages: session.messages.map(msg => ({
         ...msg,
-        fileData: undefined // Strip raw base64 data blobs out of persistence storage
+        fileData: undefined
       }))
     }));
 
@@ -168,13 +164,12 @@ export default function Home() {
       localStorage.setItem('gemini_workspace_chats', JSON.stringify(sanitizedSessions));
     } catch (e: any) {
       if (e.name === 'QuotaExceededError' || e.code === 22) {
-        console.warn('LocalStorage quota exceeded. Trimming older sessions to free up space.');
         const trimmedSessions = sanitizedSessions.slice(0, 5);
         try {
           localStorage.setItem('gemini_workspace_chats', JSON.stringify(trimmedSessions));
           setSessions(trimmedSessions);
         } catch (innerError) {
-          console.error('Critical: Unable to save to localStorage even after trimming.', innerError);
+          console.error('Critical: Unable to save to localStorage.', innerError);
         }
       } else {
         console.error('LocalStorage write error:', e);
@@ -182,7 +177,6 @@ export default function Home() {
     }
   };
 
-  // 3. New Chat Workspace Constructor
   const createNewChat = () => {
     const newSession: ChatSession = {
       id: crypto.randomUUID(),
@@ -194,13 +188,12 @@ export default function Home() {
     const targetSessions = [newSession, ...sessions];
     saveToDisk(targetSessions);
     setActiveSessionId(newSession.id);
+    setIsSidebarOpen(false); // Close sidebar on mobile after creation
   };
 
-  // Locate the currently selected context data object model
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
   const currentMessages = activeSession ? activeSession.messages : [];
 
-  // Jump to the newest message whenever the thread grows or a reply starts streaming
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [currentMessages.length, loading, activeSessionId]);
@@ -219,7 +212,6 @@ export default function Home() {
       timestamp
     };
 
-    // Construct preview text out of user prompt string for better chat thread titles
     let updatedTitle = activeSession?.title || '';
     if (currentMessages.length === 0 && prompt.trim()) {
       updatedTitle = prompt.length > 24 ? `${prompt.substring(0, 24)}...` : prompt;
@@ -227,7 +219,6 @@ export default function Home() {
 
     const updatedMessages = [...currentMessages, userMessage];
 
-    // Append the user query instantly into the selected session array
     let updatedSessions = sessions.map(s => {
       if (s.id === activeSessionId) {
         return {
@@ -243,14 +234,12 @@ export default function Home() {
     setPrompt('');
     setLoading(true);
 
-    // Map history array into context blocks to provide multi-turn file memory
     const historyPayload = updatedMessages.map(msg => ({
       role: msg.role,
       text: msg.text || "",
       fileData: msg.fileData
     }));
 
-    // Wrap Server Action call with fallback guard catching network/payload body limits
     let response;
     try {
       response = await askGemini(historyPayload, selectedModel);
@@ -266,7 +255,6 @@ export default function Home() {
       model: selectedModel
     };
 
-    // Inject Gemini generation response into target context
     updatedSessions = updatedSessions.map(s => {
       if (s.id === activeSessionId) {
         return { ...s, messages: [...s.messages, modelMessage] };
@@ -310,11 +298,18 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0A0C10] text-[#E4E7EC] flex flex-col md:flex-row font-sans">
+    <main className="h-screen w-screen overflow-hidden bg-[#0A0C10] text-[#E4E7EC] flex font-sans relative">
+
+      {/* Mobile Sidebar Backdrop Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-xs"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
       {/* --- Sidebar Thread Console Room --- */}
-      <section className="w-full md:w-80 bg-gradient-to-b from-[#090B0E] via-[#0D1016] to-[#0A0D12] border-b md:border-b-0 md:border-r border-[#1D222C]/80 flex flex-col h-72 md:h-screen shrink-0 relative overflow-hidden">
-        {/* Subtle Cybernetic Grid Pattern Overlay in Background */}
+      <section className={`fixed md:relative inset-y-0 left-0 z-40 w-72 md:w-80 bg-gradient-to-b from-[#090B0E] via-[#0D1016] to-[#0A0D12] border-r border-[#1D222C]/80 flex flex-col h-full shrink-0 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#141822_1px,transparent_1px),linear-gradient(to_bottom,#141822_1px,transparent_1px)] bg-[size:24px_24px] opacity-10 pointer-events-none" />
 
         {/* Brand Bar Header */}
@@ -333,22 +328,30 @@ export default function Home() {
             </div>
           </div>
 
-          <button
-            onClick={handleSyncData}
-            className="h-8 w-8 flex items-center justify-center rounded-xl text-[#5B6472] hover:text-amber-400 hover:bg-[#151A22] border border-transparent hover:border-[#232A36] transition-all cursor-pointer"
-            title="Sync workspace"
-          >
-            {syncStatus === 'syncing' ? (
-              <FiRefreshCw size={14} className="animate-spin text-amber-400" />
-            ) : syncStatus === 'success' ? (
-              <FiCheck size={14} className="text-emerald-400" />
-            ) : (
-              <FiRefreshCw size={14} />
-            )}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleSyncData}
+              className="h-8 w-8 flex items-center justify-center rounded-xl text-[#5B6472] hover:text-amber-400 hover:bg-[#151A22] border border-transparent hover:border-[#232A36] transition-all cursor-pointer"
+              title="Sync workspace"
+            >
+              {syncStatus === 'syncing' ? (
+                <FiRefreshCw size={14} className="animate-spin text-amber-400" />
+              ) : syncStatus === 'success' ? (
+                <FiCheck size={14} className="text-emerald-400" />
+              ) : (
+                <FiRefreshCw size={14} />
+              )}
+            </button>
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              className="md:hidden h-8 w-8 flex items-center justify-center rounded-xl text-[#5B6472] hover:text-rose-400 hover:bg-[#151A22]"
+            >
+              <FiX size={16} />
+            </button>
+          </div>
         </div>
 
-        {/* Global Action Trigger Hub: New Session Spawner */}
+        {/* New Session Spawner */}
         <div className="p-4 relative z-10">
           <button
             onClick={createNewChat}
@@ -359,7 +362,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Live Conversation Stream Indexing Board Container */}
+        {/* Live Conversation Stream Indexing Board */}
         <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5 scrollbar-none pt-2 relative z-10">
           <div className="px-2 pb-1.5 flex items-center justify-between">
             <span className="text-[10px] font-mono text-[#4A5160] uppercase tracking-widest font-semibold">Active Channels</span>
@@ -377,7 +380,10 @@ export default function Home() {
               return (
                 <div
                   key={session.id}
-                  onClick={() => setActiveSessionId(session.id)}
+                  onClick={() => {
+                    setActiveSessionId(session.id);
+                    setIsSidebarOpen(false);
+                  }}
                   className={`w-full text-left px-3.5 py-3 rounded-xl text-xs flex items-center justify-between group cursor-pointer border transition-all duration-200 ${
                     isActive
                       ? 'bg-gradient-to-r from-[#1E1B13]/85 to-[#0D1016]/85 border-amber-500/40 text-amber-400 font-semibold shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]'
@@ -428,7 +434,6 @@ export default function Home() {
               </span>
             </div>
             
-            {/* Visual Mini Latency Bar / Load Meters */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-[8.5px] text-[#4A5160] font-mono">
                 <span>Active Model:</span>
@@ -446,16 +451,22 @@ export default function Home() {
       </section>
 
       {/* --- Main Interactive Chat Display Screen Canvas --- */}
-      <section className="flex-1 flex flex-col h-[calc(100vh-288px)] md:h-screen bg-[#0A0C10] relative">
-        {/* Faint top scan line for console atmosphere */}
+      <section className="flex-1 flex flex-col h-full bg-[#0A0C10] relative min-w-0">
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
 
         {/* Top Header Bar */}
-        <div className="px-6 py-4 border-b border-[#1D222C] bg-[#0D1016]/60 backdrop-blur-md flex items-center justify-between z-10 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className={`h-2 w-2 rounded-full ${loading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
-            <div>
-              <h2 className="text-xs font-semibold tracking-tight text-[#F2F4F7] truncate max-w-[200px] md:max-w-xs">
+        <div className="px-4 md:px-6 py-3.5 border-b border-[#1D222C] bg-[#0D1016]/60 backdrop-blur-md flex items-center justify-between z-10 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden text-[#7A8296] hover:text-amber-400 p-1.5 -ml-1 rounded-lg hover:bg-[#151A22] transition-colors"
+              title="Open Navigation"
+            >
+              <FiMenu size={18} />
+            </button>
+            <div className={`h-2 w-2 rounded-full shrink-0 ${loading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
+            <div className="min-w-0">
+              <h2 className="text-xs font-semibold tracking-tight text-[#F2F4F7] truncate max-w-[150px] sm:max-w-xs md:max-w-md">
                 {activeSession?.title || 'No Active Session'}
               </h2>
               <p className="text-[9px] text-[#5B6472] font-mono tracking-wider uppercase">
@@ -465,26 +476,24 @@ export default function Home() {
           </div>
 
           {/* Model Selector Dropdown */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               onClick={() => setShowModelDropdown(!showModelDropdown)}
               className="bg-[#0D1016] border border-[#232A36] hover:border-amber-500/40 text-[#E4E7EC] hover:text-amber-400 font-semibold py-1.5 px-3 rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer"
             >
-              <FiCpu size={13} className="text-amber-400" />
-              <span>{AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name}</span>
+              <FiCpu size={13} className="text-amber-400 shrink-0" />
+              <span className="truncate max-w-[100px] sm:max-w-[140px]">{AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name}</span>
               <span className="text-[8px] text-[#5B6472]">▼</span>
             </button>
 
             {showModelDropdown && (
               <>
-                {/* Overlay to close the dropdown */}
                 <div
                   className="fixed inset-0 z-20 cursor-default"
                   onClick={() => setShowModelDropdown(false)}
                 />
 
-                {/* Dropdown Menu */}
-                <div className="absolute right-0 mt-2 w-72 bg-[#0D1016] border border-[#232A36] rounded-xl shadow-xl z-30 p-1.5 space-y-1">
+                <div className="absolute right-0 mt-2 w-64 sm:w-72 bg-[#0D1016] border border-[#232A36] rounded-xl shadow-xl z-30 p-1.5 space-y-1">
                   {AVAILABLE_MODELS.map((model) => (
                     <button
                       key={model.id}
@@ -517,7 +526,7 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-7">
           {currentMessages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6">
-              <div className="h-12 w-12 bg-[#0D1016] border border-[#232A36] rounded-2xl flex items-center justify-center text-amber-400 mb-4">
+              <div className="h-12 w-12 bg-[#0D1016] border border-[#232A36] rounded-2xl flex items-center justify-center text-amber-400 mb-4 shadow-[0_0_15px_rgba(245,158,11,0.1)]">
                 <FiTerminal size={20} />
               </div>
               <h3 className="text-sm font-medium text-[#D7DBE3] font-mono tracking-wide">
@@ -531,24 +540,22 @@ export default function Home() {
             <div className="max-w-3xl mx-auto w-full space-y-7">
               {currentMessages.map((msg) => (
                 msg.role === 'user' ? (
-                  // --- User message: right-aligned bubble ---
                   <div key={msg.id} className="flex flex-col max-w-[85%] md:max-w-[75%] space-y-1 ml-auto items-end">
                     <span className="text-[9px] text-[#4A5160] font-mono tracking-wide px-1">
                       CLIENT · {msg.timestamp}
                     </span>
 
                     {msg.fileName && (
-                      <div className="text-[11px] bg-[#0D1016] border border-[#232A36] text-amber-400 py-1 px-2.5 rounded-lg flex items-center gap-1.5 font-mono mb-1">
-                        <FiFile size={11} /> <span>{msg.fileName}</span>
+                      <div className="text-[11px] bg-[#0D1016] border border-[#232A36] text-amber-400 py-1 px-2.5 rounded-lg flex items-center gap-1.5 font-mono mb-1 truncate max-w-full">
+                        <FiFile size={11} className="shrink-0" /> <span className="truncate">{msg.fileName}</span>
                       </div>
                     )}
 
-                    <div className="p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap border bg-amber-500 border-amber-400 text-[#1A1305] rounded-tr-none font-medium">
+                    <div className="p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap border bg-amber-500 border-amber-400 text-[#1A1305] rounded-tr-none font-medium break-words w-full">
                       {msg.text}
                     </div>
                   </div>
                 ) : (
-                  // --- Model message: full-width, avatar + flowing markdown, no bubble ---
                   <div key={msg.id} className="flex gap-3 w-full group/msg">
                     <div className="h-7 w-7 rounded-lg bg-[#151A22] border border-[#232A36] flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
                       <FiCpu size={13} />
@@ -562,7 +569,7 @@ export default function Home() {
                       <MarkdownMessage text={msg.text} />
                       <button
                         onClick={() => handleCopy(msg.id, msg.text)}
-                        className="opacity-0 group-hover/msg:opacity-100 flex items-center gap-1.5 text-[10px] font-mono text-[#5B6472] hover:text-amber-400 transition-all mt-1"
+                        className="opacity-0 group-hover/msg:opacity-100 flex items-center gap-1.5 text-[10px] font-mono text-[#5B6472] hover:text-amber-400 transition-all mt-1 cursor-pointer"
                       >
                         {copiedId === msg.id ? (
                           <>
@@ -603,13 +610,11 @@ export default function Home() {
             </div>
           )}
 
-          {/* Scroll anchor: always kept just past the last message */}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Console Action Input Deck */}
-        <div className="p-4 border-t border-[#1D222C] bg-[#0A0C10] space-y-3">
-
+        <div className="p-3 md:p-4 border-t border-[#1D222C] bg-[#0A0C10] space-y-3 shrink-0">
           {attachedFile && (
             <div className="max-w-3xl mx-auto flex items-center justify-between bg-[#0D1016] border border-amber-500/20 p-2.5 rounded-xl text-xs">
               <div className="flex items-center gap-2 truncate text-[#D7DBE3]">
@@ -618,7 +623,7 @@ export default function Home() {
               </div>
               <button
                 onClick={() => setAttachedFile(null)}
-                className="text-[#5B6472] hover:text-rose-400 p-1"
+                className="text-[#5B6472] hover:text-rose-400 p-1 cursor-pointer"
               >
                 <FiX size={13} />
               </button>
@@ -637,7 +642,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="bg-[#151A22] border border-[#232A36] hover:border-[#333B4A] text-[#7A8296] h-10 w-10 flex items-center justify-center rounded-xl transition-colors shrink-0"
+              className="bg-[#151A22] border border-[#232A36] hover:border-[#333B4A] text-[#7A8296] h-10 w-10 flex items-center justify-center rounded-xl transition-colors shrink-0 cursor-pointer"
               title="Attach reference file"
             >
               <FiPaperclip size={15} />
@@ -659,7 +664,7 @@ export default function Home() {
             <button
               type="submit"
               disabled={loading || (!prompt.trim() && !attachedFile)}
-              className="bg-amber-500 hover:bg-amber-400 text-[#1A1305] h-10 w-10 flex items-center justify-center rounded-xl transition-colors disabled:opacity-30 shrink-0"
+              className="bg-amber-500 hover:bg-amber-400 text-[#1A1305] h-10 w-10 flex items-center justify-center rounded-xl transition-colors disabled:opacity-30 shrink-0 cursor-pointer"
             >
               <FiSend size={15} />
             </button>

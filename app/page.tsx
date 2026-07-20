@@ -19,6 +19,7 @@ import {
   FiCpu,
   FiCopy,
   FiMenu,
+  FiTrash2,
 } from 'react-icons/fi';
 import { askGemini } from './actions';
 
@@ -188,7 +189,28 @@ export default function Home() {
     const targetSessions = [newSession, ...sessions];
     saveToDisk(targetSessions);
     setActiveSessionId(newSession.id);
-    setIsSidebarOpen(false); // Close sidebar on mobile after creation
+    setIsSidebarOpen(false);
+  };
+
+  const deleteChat = (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const filtered = sessions.filter(s => s.id !== sessionId);
+    
+    if (filtered.length === 0) {
+      const newSession: ChatSession = {
+        id: crypto.randomUUID(),
+        title: `New Session #${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        messages: [],
+        createdAt: new Date().toLocaleDateString()
+      };
+      saveToDisk([newSession]);
+      setActiveSessionId(newSession.id);
+    } else {
+      saveToDisk(filtered);
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(filtered[0].id);
+      }
+    }
   };
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
@@ -384,39 +406,27 @@ export default function Home() {
                     setActiveSessionId(session.id);
                     setIsSidebarOpen(false);
                   }}
-                  className={`w-full text-left px-3.5 py-3 rounded-xl text-xs flex items-center justify-between group cursor-pointer border transition-all duration-200 ${
+                  className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between group cursor-pointer border transition-all duration-200 ${
                     isActive
                       ? 'bg-gradient-to-r from-[#1E1B13]/85 to-[#0D1016]/85 border-amber-500/40 text-amber-400 font-semibold shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]'
                       : 'bg-[#0D1016]/30 hover:bg-[#101319]/70 border-[#1D222C]/40 text-[#7A8296] hover:text-[#D7DBE3] hover:border-[#232A36]'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 truncate flex-1 pr-2">
+                  <div className="flex items-center gap-2.5 truncate flex-1 min-w-0 pr-2">
                     <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${isActive ? 'bg-amber-400 animate-pulse' : 'bg-transparent'}`} />
-                    <FiMessageSquare size={13} className={`shrink-0 opacity-70 ${isActive ? 'text-amber-400' : ''}`} />
+                    <FiMessageSquare size={12} className={`shrink-0 opacity-70 ${isActive ? 'text-amber-400' : ''}`} />
                     <span className="truncate tracking-wide">{session.title}</span>
                   </div>
                   
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-mono uppercase transition-colors shrink-0 ${
-                      isActive ? 'bg-amber-400/10 text-amber-400/80 border border-amber-400/10' : 'bg-[#12151C] text-[#4A5160] group-hover:text-[#7A8296]'
-                    }`}>
-                      {session.createdAt}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const filtered = sessions.filter(s => s.id !== session.id);
-                        saveToDisk(filtered);
-                        if (activeSessionId === session.id && filtered.length > 0) {
-                          setActiveSessionId(filtered[0].id);
-                        }
-                      }}
-                      className="opacity-0 group-hover:opacity-100 text-[#5B6472] hover:text-rose-400 p-1 rounded hover:bg-[#1C202B]/40 transition-all cursor-pointer"
-                      title="Close session"
-                    >
-                      <FiX size={12} />
-                    </button>
-                  </div>
+                  {/* Always accessible trash/delete icon button */}
+                  <button
+                    type="button"
+                    onClick={(e) => deleteChat(session.id, e)}
+                    className="text-[#5B6472] hover:text-rose-400 p-1.5 rounded-lg hover:bg-[#1C202B] transition-all cursor-pointer shrink-0"
+                    title="Delete chat session"
+                  >
+                    <FiTrash2 size={13} />
+                  </button>
                 </div>
               );
             })

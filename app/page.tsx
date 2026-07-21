@@ -247,6 +247,12 @@ export default function Home() {
     e.preventDefault();
     if ((!prompt.trim() && !attachedFile) || loading || !activeSessionId) return;
 
+    // Check payload size roughly if base64 file is attached to prevent silent gateway/server payload crashes
+    if (attachedFile && attachedFile.base64.length > 4 * 1024 * 1024) {
+      alert("Attached file is too large. Please use a file smaller than 3MB.");
+      return;
+    }
+
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -279,7 +285,8 @@ export default function Home() {
     setPrompt('');
     setLoading(true);
 
-    const historyPayload = updatedMessages.map(msg => ({
+    // Keep history lean (last 10 turns max) to prevent Next.js server action payload limits
+    const trimmedHistoryPayload = updatedMessages.slice(-10).map(msg => ({
       role: msg.role,
       text: msg.text || "",
       fileData: msg.fileData
@@ -287,7 +294,7 @@ export default function Home() {
 
     let response;
     try {
-      response = await askGemini(historyPayload, selectedModel);
+      response = await askGemini(trimmedHistoryPayload, selectedModel);
     } catch (err: any) {
       response = { error: `Network/Payload Limit Error: ${err?.message || 'Failed to fetch server action.'}` };
     }
@@ -315,6 +322,11 @@ export default function Home() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > 3 * 1024 * 1024) {
+      alert("File size exceeds 3MB limit. Please choose a smaller file.");
+      return;
+    }
 
     const reader = new FileReader();
     reader.onloadend = () => {

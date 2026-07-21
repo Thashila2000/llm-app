@@ -2,7 +2,7 @@
 
 export const maxDuration = 30;
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -235,9 +235,13 @@ export default function Home() {
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
   const currentMessages = activeSession ? activeSession.messages : [];
 
+  useLayoutEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+  }, [activeSessionId]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [currentMessages.length, loading, activeSessionId]);
+  }, [currentMessages.length, loading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -469,7 +473,7 @@ export default function Home() {
       </section>
 
       {/* --- Main Interactive Chat Display Screen Canvas --- */}
-      <section className="flex-1 flex flex-col h-full bg-[#0A0C10] relative min-w-0">
+      <section className="flex-1 flex flex-col h-full bg-[#0A0C10] relative min-w-0 overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
 
         {/* Top Header Bar */}

@@ -1,4 +1,4 @@
-'use client'
+'use client';
 
 export const maxDuration = 30;
 
@@ -11,7 +11,6 @@ import {
   FiX,
   FiPaperclip,
   FiSend,
-  FiRefreshCw,
   FiCheck,
   FiFile,
   FiImage,
@@ -20,6 +19,7 @@ import {
   FiCopy,
   FiMenu,
   FiTrash2,
+  FiSidebar,
 } from 'react-icons/fi';
 import { askGemini } from './actions';
 
@@ -35,7 +35,9 @@ interface Message {
 
 const AVAILABLE_MODELS = [
   { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', provider: 'Google', description: 'Recommended - Fast & multimodal' },
-  { id: 'openai/gpt-oss-20b:free', name: 'OpenAI GPT-OSS-20B', provider: 'OpenAI', description: 'Open weights - Free tier' }
+  { id: 'openai/gpt-oss-20b:free', name: 'OpenAI GPT-OSS-20B', provider: 'OpenAI', description: 'Open weights - Free tier' },
+  { id: 'poolside/laguna-m.1:free', name: 'Poolside Laguna M.1', provider: 'Poolside', description: 'Reasoning model - Free tier' },
+  { id: 'poolside/laguna-xs-2.1:free', name: 'Poolside Laguna XS 2.1', provider: 'Poolside', description: 'Specialized reasoning - Free tier' },
 ];
 
 interface ChatSession {
@@ -122,15 +124,16 @@ export default function Home() {
 
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success'>('idle');
   const [attachedFile, setAttachedFile] = useState<{ base64: string; mimeType: string; name: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const savedSessions = localStorage.getItem('gemini_workspace_chats');
@@ -150,6 +153,22 @@ export default function Home() {
       createNewChat();
     }
   }, []);
+
+  // Close model dropdown on outside click anywhere in the window
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowModelDropdown(false);
+      }
+    };
+
+    if (showModelDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showModelDropdown]);
 
   const saveToDisk = (updatedSessions: ChatSession[]) => {
     const sanitizedSessions = updatedSessions.map(session => ({
@@ -189,7 +208,7 @@ export default function Home() {
     const targetSessions = [newSession, ...sessions];
     saveToDisk(targetSessions);
     setActiveSessionId(newSession.id);
-    setIsSidebarOpen(false);
+    setIsMobileSidebarOpen(false);
   };
 
   const deleteChat = (sessionId: string, e: React.MouseEvent) => {
@@ -305,14 +324,6 @@ export default function Home() {
     reader.readAsDataURL(file);
   };
 
-  const handleSyncData = () => {
-    setSyncStatus('syncing');
-    setTimeout(() => {
-      setSyncStatus('success');
-      setTimeout(() => setSyncStatus('idle'), 2000);
-    }, 1000);
-  };
-
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -323,15 +334,17 @@ export default function Home() {
     <main className="h-screen w-screen overflow-hidden bg-[#0A0C10] text-[#E4E7EC] flex font-sans relative">
 
       {/* Mobile Sidebar Backdrop Overlay */}
-      {isSidebarOpen && (
+      {isMobileSidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-xs"
-          onClick={() => setIsSidebarOpen(false)}
+          onClick={() => setIsMobileSidebarOpen(false)}
         />
       )}
 
       {/* --- Sidebar Thread Console Room --- */}
-      <section className={`fixed md:relative inset-y-0 left-0 z-40 w-72 md:w-80 bg-gradient-to-b from-[#090B0E] via-[#0D1016] to-[#0A0D12] border-r border-[#1D222C]/80 flex flex-col h-full shrink-0 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <section className={`fixed md:relative inset-y-0 left-0 z-40 w-72 md:w-80 bg-gradient-to-b from-[#090B0E] via-[#0D1016] to-[#0A0D12] border-r border-[#1D222C]/85 flex flex-col h-full shrink-0 transition-all duration-300 ease-in-out ${
+        isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+      } ${!isDesktopSidebarOpen ? 'md:hidden' : 'md:flex'}`}>
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#141822_1px,transparent_1px),linear-gradient(to_bottom,#141822_1px,transparent_1px)] bg-[size:24px_24px] opacity-10 pointer-events-none" />
 
         {/* Brand Bar Header */}
@@ -342,7 +355,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-sm font-bold tracking-wide bg-gradient-to-r from-amber-400 via-amber-200 to-amber-500 bg-clip-text text-transparent font-mono">
-                Gemini Console
+                Console
               </h1>
               <p className="text-[9px] text-[#5B6472] font-mono tracking-wider flex items-center gap-1.5 mt-0.5">
                 <SignalDot /> SYSTEM ONLINE
@@ -351,21 +364,17 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-1">
+            {/* Desktop Sidebar Toggle Button located inside the sidebar header */}
             <button
-              onClick={handleSyncData}
-              className="h-8 w-8 flex items-center justify-center rounded-xl text-[#5B6472] hover:text-amber-400 hover:bg-[#151A22] border border-transparent hover:border-[#232A36] transition-all cursor-pointer"
-              title="Sync workspace"
+              onClick={() => setIsDesktopSidebarOpen(!isDesktopSidebarOpen)}
+              className="hidden md:flex text-[#7A8296] hover:text-amber-400 p-1.5 rounded-lg hover:bg-[#151A22] transition-colors cursor-pointer"
+              title="Collapse Sidebar"
             >
-              {syncStatus === 'syncing' ? (
-                <FiRefreshCw size={14} className="animate-spin text-amber-400" />
-              ) : syncStatus === 'success' ? (
-                <FiCheck size={14} className="text-emerald-400" />
-              ) : (
-                <FiRefreshCw size={14} />
-              )}
+              <FiSidebar size={18} />
             </button>
+
             <button
-              onClick={() => setIsSidebarOpen(false)}
+              onClick={() => setIsMobileSidebarOpen(false)}
               className="md:hidden h-8 w-8 flex items-center justify-center rounded-xl text-[#5B6472] hover:text-rose-400 hover:bg-[#151A22]"
             >
               <FiX size={16} />
@@ -404,7 +413,7 @@ export default function Home() {
                   key={session.id}
                   onClick={() => {
                     setActiveSessionId(session.id);
-                    setIsSidebarOpen(false);
+                    setIsMobileSidebarOpen(false);
                   }}
                   className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between group cursor-pointer border transition-all duration-200 ${
                     isActive
@@ -418,7 +427,6 @@ export default function Home() {
                     <span className="truncate tracking-wide">{session.title}</span>
                   </div>
                   
-                  {/* Always accessible trash/delete icon button */}
                   <button
                     type="button"
                     onClick={(e) => deleteChat(session.id, e)}
@@ -467,13 +475,26 @@ export default function Home() {
         {/* Top Header Bar */}
         <div className="px-4 md:px-6 py-3.5 border-b border-[#1D222C] bg-[#0D1016]/60 backdrop-blur-md flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
+            {/* Mobile Hamburger Menu */}
             <button
-              onClick={() => setIsSidebarOpen(true)}
+              onClick={() => setIsMobileSidebarOpen(true)}
               className="md:hidden text-[#7A8296] hover:text-amber-400 p-1.5 -ml-1 rounded-lg hover:bg-[#151A22] transition-colors"
               title="Open Navigation"
             >
               <FiMenu size={18} />
             </button>
+
+            {/* Desktop Sidebar Toggle Button displayed on the top left screen when sidebar is closed */}
+            {!isDesktopSidebarOpen && (
+              <button
+                onClick={() => setIsDesktopSidebarOpen(true)}
+                className="hidden md:flex text-[#7A8296] hover:text-amber-400 p-1.5 -ml-1 rounded-lg hover:bg-[#151A22] transition-colors cursor-pointer"
+                title="Expand Sidebar"
+              >
+                <FiSidebar size={18} />
+              </button>
+            )}
+
             <div className={`h-2 w-2 rounded-full shrink-0 ${loading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
             <div className="min-w-0">
               <h2 className="text-xs font-semibold tracking-tight text-[#F2F4F7] truncate max-w-[150px] sm:max-w-xs md:max-w-md">
@@ -486,7 +507,7 @@ export default function Home() {
           </div>
 
           {/* Model Selector Dropdown */}
-          <div className="relative shrink-0">
+          <div className="relative shrink-0" ref={dropdownRef}>
             <button
               onClick={() => setShowModelDropdown(!showModelDropdown)}
               className="bg-[#0D1016] border border-[#232A36] hover:border-amber-500/40 text-[#E4E7EC] hover:text-amber-400 font-semibold py-1.5 px-3 rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer"
@@ -497,37 +518,30 @@ export default function Home() {
             </button>
 
             {showModelDropdown && (
-              <>
-                <div
-                  className="fixed inset-0 z-20 cursor-default"
-                  onClick={() => setShowModelDropdown(false)}
-                />
-
-                <div className="absolute right-0 mt-2 w-64 sm:w-72 bg-[#0D1016] border border-[#232A36] rounded-xl shadow-xl z-30 p-1.5 space-y-1">
-                  {AVAILABLE_MODELS.map((model) => (
-                    <button
-                      key={model.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedModel(model.id);
-                        setShowModelDropdown(false);
-                      }}
-                      className={`w-full text-left p-2 rounded-lg text-xs transition-colors flex flex-col gap-0.5 cursor-pointer ${selectedModel === model.id
-                          ? 'bg-[#151A22] text-amber-400 border border-amber-500/20 font-medium'
-                          : 'bg-transparent hover:bg-[#101319] text-[#7A8296] hover:text-[#D7DBE3] border border-transparent'
-                        }`}
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <span className="font-semibold">{model.name}</span>
-                        <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-[#1C2330] text-[#7A8296]">
-                          {model.provider}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-[#5B6472] mt-0.5">{model.description}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
+              <div className="absolute right-0 mt-2 w-64 sm:w-72 bg-[#0D1016] border border-[#232A36] rounded-xl shadow-xl z-30 p-1.5 space-y-1">
+                {AVAILABLE_MODELS.map((model) => (
+                  <button
+                    key={model.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedModel(model.id);
+                      setShowModelDropdown(false);
+                    }}
+                    className={`w-full text-left p-2 rounded-lg text-xs transition-colors flex flex-col gap-0.5 cursor-pointer ${selectedModel === model.id
+                        ? 'bg-[#151A22] text-amber-400 border border-amber-500/20 font-medium'
+                        : 'bg-transparent hover:bg-[#101319] text-[#7A8296] hover:text-[#D7DBE3] border border-transparent'
+                      }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="font-semibold">{model.name}</span>
+                      <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-[#1C2330] text-[#7A8296]">
+                        {model.provider}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#5B6472] mt-0.5">{model.description}</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -574,6 +588,8 @@ export default function Home() {
                       <span className="text-[9px] text-[#4A5160] font-mono tracking-wide px-0.5">
                         {msg.model?.includes('gpt-oss') 
                           ? 'GPT-OSS CORE' 
+                          : msg.model?.includes('poolside')
+                          ? 'POOLSIDE CORE'
                           : 'GEMINI CORE'} · {msg.timestamp}
                       </span>
                       <MarkdownMessage text={msg.text} />
@@ -607,6 +623,8 @@ export default function Home() {
                     <span className="text-[9px] text-[#4A5160] font-mono tracking-wide px-0.5">
                       {selectedModel.includes('gpt-oss') 
                         ? 'GPT-OSS CORE' 
+                        : selectedModel.includes('poolside')
+                        ? 'POOLSIDE CORE'
                         : 'GEMINI CORE'} · streaming
                     </span>
                     <div className="flex gap-1.5 items-center h-7">
@@ -667,7 +685,7 @@ export default function Home() {
                   handleSubmit(e);
                 }
               }}
-              placeholder="Message Gemini... (Enter to send)"
+              placeholder="Message ... (Enter to send)"
               className="flex-1 bg-transparent border-0 outline-none text-[#E4E7EC] placeholder-[#4A5160] text-sm px-2 py-2 h-10 max-h-32 resize-none focus:ring-0"
             />
 

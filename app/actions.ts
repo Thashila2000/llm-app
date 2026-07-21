@@ -1,6 +1,6 @@
-'use server'
+'use server';
 
-import { GoogleGenAI } from '@google/genai'
+import { GoogleGenAI } from '@google/genai';
 
 interface ChatMessageInput {
   role: 'user' | 'model';
@@ -13,8 +13,14 @@ export async function askGemini(history: ChatMessageInput[], model: string = 'ge
     return { error: 'Chat history cannot be empty.' };
   }
 
-  // OPTIMIZATION: Trim history to send only the last 8 messages to speed up response times and reduce payload limits
-  const trimmedHistory = history.length > 8 ? history.slice(history.length - 8) : history;
+  // OPTIMIZATION: If using Poolside models, use a stateless single-turn approach to completely avoid history payload/parser errors
+  let trimmedHistory = history;
+  if (model.includes('poolside')) {
+    trimmedHistory = [history[history.length - 1]];
+  } else {
+    // Trim history to send only the last 8 messages for Gemini/OpenAI
+    trimmedHistory = history.length > 8 ? history.slice(history.length - 8) : history;
+  }
 
   // 1. ROUTING: If it's a Gemini model, use the native SDK
   if (model.startsWith('gemini')) {
@@ -102,7 +108,25 @@ async function handleOpenRouterRequest(history: ChatMessageInput[], model: strin
     });
 
     const data = await response.json();
-    if (data.error) throw new Error(data.error.message || 'Unknown OpenRouter Error');
+    
+    if (data.error) {
+      const errorMessage = typeof data.error === 'object' 
+        ? data.error.message || JSON.stringify(data.error) 
+        : data.error;
+        
+      if (model.includes('poolside')) {
+        return { 
+          error: `Poolside Provider Node Error: The free-tier host for ${model} is currently offline or overloaded on OpenRouter. Please select Gemini 3.5 Flash or OpenAI GPT-OSS.` 
+        };
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('Invalid response structure received from OpenRouter API provider.');
+    }
+
     return { text: data.choices[0].message.content };
   } catch (error: any) {
     return { error: `Model Provider Error: ${error.message}` };
